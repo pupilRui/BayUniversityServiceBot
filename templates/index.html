@@ -1,0 +1,27 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Bay University Service Bot</title>
+</head>
+<body>
+    <h1>Bay University Service Bot</h1>
+    <form method="POST" action="/submit_question">
+        <input type="text" name="question" placeholder="Ask a question">
+        <button type="submit">Submit</button>
+    </form>
+    <!-- Add a "Start New Chat" button -->
+    <form method="POST" action="/start_new_chat">
+        <button type="submit">Start New Chat</button>
+    </form>
+    <div>
+        <h2>Replies:</h2>
+        <ul>
+            {% for question, reply in replies.items() %}
+            <li><strong>{{ question }}</strong>: {{ reply }}</li>
+            {% endfor %}
+        </ul>
+    </div>
+</body>
+</html>
