@@ -51,7 +51,7 @@ def upload_audio():
         original_audio = AudioSegment.from_file(audio)
         original_audio.export(filepath, format="mp3")
 
-        result = audio_model.transcribe(filepath)
+        result = audio_model.transcribe(filepath, language="en")
 
         question = result["text"]
 
