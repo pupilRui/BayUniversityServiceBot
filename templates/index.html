@@ -1,104 +1,66 @@
-<!DOCTYPE html>
-<html lang="en">
+import streamlit as st
+import os
+import uuid
+from pydub import AudioSegment
+from gtts import gTTS
+import base64
+from cbfs import cbfs
+import whisper
 
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Bay University Service Bot</title>
-</head>
+# Sample data for replies (you can replace this with your chatbot logic)
+replies = {}
+c = cbfs()
+audio_model = whisper.load_model("base")
 
-<body>
-    <h1>Bay University Service Bot</h1>
-    <form method="POST" action="/submit_question">
-        <input type="text" name="question" placeholder="Ask a question">
-        <button type="submit">Submit</button>
-    </form>
-    <!-- Add a "Start New Chat" button -->
-    <form method="POST" action="/start_new_chat">
-        <button type="submit">Start New Chat</button>
-    </form>
+def main():
+    st.title("Bay University Service Bot")
 
-    <div>
-        <h2>Record a Question:</h2>
-        <button id="recordButton">Record</button>
-        <button id="stopButton" disabled>Stop</button>
-    </div>
+    if st.button("Ask a Text Question"):
+        display_text_question_page()
+    elif st.button("Ask a Voice Question"):
+        display_voice_question_page()
 
-    <div>
-        <h2>Replies:</h2>
-        <ul>
-            {% for question, reply in replies.items() %}
-            <li><strong>{{ question }}</strong>: {{ reply }}</li>
-            {% endfor %}
-        </ul>
-    </div>
+def display_text_question_page():
+    st.header("Chat with the Chatbot")
+    question = st.text_input("Enter your question:")
+    
+    if st.button("Submit"):
+        if question:
+            reply = c.convchain(question)  # Replace with your chatbot logic
+            replies[question] = reply
+            st.write(f"Question: {question}")
+            st.write(f"Reply: {reply}")
 
-    <audio id="audioPlayer" controls hidden></audio>
+def display_voice_question_page():
+    st.header("Ask a Question via Voice")
+    st.write("Click the 'Record' button to start recording your question.")
+    st.write("Click the 'Stop' button when you finish recording.")
+    
+    audio_chunks = st.audio_recorder("Record", key="audio_key")
+    
+    if st.button("Stop"):
+        if audio_chunks:
+            audio_data = b"".join(audio_chunks)
+            filename = f"audios/{uuid.uuid4()}.wav"
+            with open(filename, "wb") as audio_file:
+                audio_file.write(audio_data)
 
-    <script>
-        let mediaRecorder;
-        let audioChunks = [];
+            result = audio_model.transcribe(filename, language="en")
+            question = result["text"]
 
-        document.getElementById("recordButton").addEventListener("click", function () {
-            navigator.mediaDevices.getUserMedia({ audio: true })
-                .then(stream => {
-                    mediaRecorder = new MediaRecorder(stream);
-                    mediaRecorder.start();
+            st.write(f"Transcribed Question: {question}")
 
-                    mediaRecorder.addEventListener("dataavailable", event => {
-                        audioChunks.push(event.data);
-                    });
+            reply = c.convchain(question)  # Replace with your chatbot logic
+            replies[question] = reply
 
-                    document.getElementById("stopButton").disabled = false;
-                    document.getElementById("recordButton").disabled = true;
-                });
-        });
+            reply_filename = f"audios/{uuid.uuid4()}.mp3"
+            mp3_obj = gTTS(text=reply, lang="en", slow=False)
+            mp3_obj.save(reply_filename)
 
-        document.getElementById("stopButton").addEventListener("click", function () {
-            mediaRecorder.stop();
+            with open(reply_filename, "rb") as mp3_file:
+                encoded_mp3 = base64.b64encode(mp3_file.read()).decode('utf-8')
 
-            mediaRecorder.addEventListener("stop", () => {
-                const audioBlob = new Blob(audioChunks);
-                const formData = new FormData();
-                formData.append("audio", audioBlob);
+            st.audio(encoded_mp3, format="audio/mp3")
 
-                // fetch("/upload-audio", {
-                //     method: "POST",
-                //     body: formData
-                // }).then(response => response.text()).then(data => {
-                //     console.log(data);
-                // });
-
-                fetch('/upload-audio', {
-                    method: 'POST',
-                    body: formData
-                })
-                    .then(response => response.json())
-                    .then(data => {
-                        // Update replies list
-                        const repliesList = document.querySelector('ul');
-                        repliesList.innerHTML = ''; // Clear current list
-                        for (const [question, reply] of Object.entries(data.replies)) {
-                            const listItem = document.createElement('li');
-                            listItem.innerHTML = `<strong>${question}</strong>: ${reply}`;
-                            repliesList.appendChild(listItem);
-                        }
-
-                        // Set up and play the audio
-                        const audioPlayer = document.getElementById('audioPlayer');
-                        audioPlayer.src = data.encoded_mp3;
-                        audioPlayer.hidden = false; // Show the player
-                        audioPlayer.play();
-                    })
-                    .catch(error => console.error('Error:', error));
-
-                audioChunks = [];
-                document.getElementById("recordButton").disabled = false;
-                document.getElementById("stopButton").disabled = true;
-            });
-        });
-    </script>
-
-</body>
-
-</html>
+if __name__ == "__main__":
+    main()

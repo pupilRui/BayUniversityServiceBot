@@ -1,82 +1,121 @@
-from flask import Flask, render_template, request, redirect, url_for
-from cbfs import cbfs
-from werkzeug.utils import secure_filename
+import streamlit as st
 import os
-from pydub import AudioSegment
 import uuid
+from pydub import AudioSegment
 from gtts import gTTS
-import whisper
 import base64
-from flask import jsonify
+from cbfs import cbfs
+import whisper
+from st_audiorec import st_audiorec
+import logging  # Import the logging module
+import speech_recognition as sr
+import io
 
-app = Flask(__name__)
+# Set up logging configuration
+logging.basicConfig(
+    level=logging.INFO,  # Set the logging level (INFO, DEBUG, ERROR, etc.)
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+)
+
+# Create a logger for your Streamlit app
+logger = logging.getLogger(__name__)
 
 # Sample data for replies (you can replace this with your chatbot logic)
 replies = {}
 c = cbfs()
 audio_model = whisper.load_model("base")
 
-@app.route('/')
-def index():
-    return render_template('index.html', replies=replies)
+def main():
+    st.title("Chatbot App")
 
-@app.route('/submit_question', methods=['POST'])
-def submit_question():
-    question = request.form.get('question')
-    reply = c.convchain(question)
-    replies[question] = reply
-    return index()
+    page = st.selectbox("Select a page", ["Text questions", "Voice questions"])
+    
+    if page == "Text questions":
+        display_text_questions_page()
+    elif page == "Voice questions":
+        display_voice_question_page()
 
-@app.route('/start_new_chat', methods=['POST'])
-def start_new_chat():
-    # Clear the conversation history to start a new chat
-    c.clr_history()
-    replies.clear()
-    return redirect(url_for('index'))
+def display_text_questions_page():
+    st.header("Chat with the Chatbot")
+    question = st.text_input("Enter your question:")
+    
+    if st.button("Submit"):
+        if question:
+            reply = c.convchain(question)  # Replace with your chatbot logic
+            replies[question] = reply
+            st.write(f"Question: {question}")
+            st.write(f"Reply: {reply}")
 
-@app.route('/upload-audio', methods=['POST'])
-def upload_audio():
-    if 'audio' not in request.files:
-        return 'No audio file', 400
+            # Log the question and reply
+            logger.info("Text Question: %s", question)
+            logger.info("Chatbot Reply: %s", reply)
 
-    audio = request.files['audio']
-    if audio.filename == '':
-        return 'No selected file', 400
+def display_voice_question_page():
+    st.header("Ask a Question via Voice")
+    st.write("Click the 'Record' button to start recording your question.")
+    
+    wav_audio_data = st_audiorec()
 
-    if audio:
+    if wav_audio_data is not None:
+        # st.audio(wav_audio_data, format='audio/wav')
 
-        filename = f"{uuid.uuid4()}.mp3"
-        filepath = os.path.join('audios', filename)
+        # Log that audio recording has taken place
+        logger.info("Audio Recording Completed")
 
-        original_audio = AudioSegment.from_file(audio)
-        original_audio.export(filepath, format="mp3")
+        # Create a temporary WAV file to store the audio data
+        temp_filename = "temp_audio.wav"
+        with open(temp_filename, "wb") as temp_audio_file:
+            temp_audio_file.write(wav_audio_data)
 
-        result = audio_model.transcribe(filepath, language="en")
+        result = audio_model.transcribe(temp_filename, language="en")
 
+        # Extract the transcribed text from the result
         question = result["text"]
 
-        print("The question is: "+ question)
-              
+        # st.write(f"Transcribed Text: {transcription}")
 
         reply = c.convchain(question)  # Replace with your chatbot logic
         replies[question] = reply
+        st.write(f"Question: {question}")
+        st.write(f"Reply: {reply}")
 
-        print("The reply is: "+ reply)
+        # Log the question and reply
+        logger.info("Text Question: %s", question)
+        logger.info("Chatbot Reply: %s", reply)
 
-        reply_filename = f"{uuid.uuid4()}.mp3"
-        reply_filepath = os.path.join('audios', reply_filename)
+        # Remove the temporary audio file
+        os.remove(temp_filename)
+
         mp3_obj = gTTS(text=reply, lang="en", slow=False)
-        mp3_obj.save(reply_filepath)
+        reply_filename = f"{uuid.uuid4()}.mp3"
+        mp3_obj.save(reply_filename)
+        autoplay_audio(reply_filename)
 
-        with open(reply_filepath, "rb") as mp3_file:
-            encoded_mp3 = base64.b64encode(mp3_file.read()).decode('utf-8')
+        # # Convert the MP3 content to bytes
+        # mp3_bytes_io = io.BytesIO()
+        # mp3_obj.write_to_fp(mp3_bytes_io)
+        # mp3_bytes = mp3_bytes_io.getvalue()
 
-        # mp3_obj = gTTS(text=reply, lang="en", slow=False)
+        # # Encode the MP3 bytes as base64
+        # encoded_mp3 = base64.b64encode(mp3_bytes).decode('utf-8')
 
-        return jsonify({
-            'replies': replies,
-            'encoded_mp3': f"data:audio/mpeg;base64,{encoded_mp3}"
-        })
+        # # Play the MP3 audio in Streamlit
+        # st.audio(encoded_mp3, format='audio/mp3')
 
-if __name__ == '__main__':
-    app.run(debug=True)
+def autoplay_audio(file_path: str):
+    with open(file_path, "rb") as f:
+        data = f.read()
+        b64 = base64.b64encode(data).decode()
+        md = f"""
+            <audio controls autoplay="true">
+            <source src="data:audio/mp3;base64,{b64}" type="audio/mp3">
+            </audio>
+            """
+        st.markdown(
+            md,
+            unsafe_allow_html=True,
+        )
+
+
+if __name__ == "__main__":
+    main()
